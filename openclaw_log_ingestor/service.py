@@ -11,7 +11,7 @@ from typing import Protocol, Sequence
 from .config import IngestorConfig
 from .health import HealthServer, HealthSnapshot
 from .parser import ParsedLogRecord, parse_log_line
-from .tailer import Checkpoint, FileTailer, LogFileLocator
+from .tailer import Checkpoint, DailyLogFileLocator, FileTailer
 
 
 LOGGER = logging.getLogger(__name__)
@@ -52,11 +52,7 @@ class IngestorService:
         self._config = config
         self._sink = sink
         self._dry_run = dry_run
-        self._locator = LogFileLocator(
-            directory=config.log_directory,
-            exact_file=config.log_file,
-            glob_pattern=config.log_glob,
-        )
+        self._locator = DailyLogFileLocator(directory=config.log_directory)
         self._tailer = FileTailer(config.consumer_name, config.start_position)
         self._health_lock = threading.Lock()
         self._health_snapshot = HealthSnapshot(consumer_name=config.consumer_name, dry_run=dry_run)
@@ -98,7 +94,7 @@ class IngestorService:
 
         active_file = self._locator.find_active_file()
         if active_file is None:
-            LOGGER.info("No matching log file found yet.")
+            LOGGER.info("Today's log file is not present yet.")
             self._set_health(active_log_path=None)
             return 0
 

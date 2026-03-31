@@ -12,7 +12,7 @@ It is designed for the MacMini-style deployment you described:
 
 ## How it works
 
-The ingestor polls the newest file matching `openclaw-*.log` by default. It opens the file in read-only mode, seeks to its saved byte offset, and only processes lines that end with a newline. If the writer is still appending a partial line, that line is ignored until the next poll, so the logger keeps uninterrupted write access.
+The parser looks for exactly one file each day: `/tmp/openclaw/openclaw-YYYY-MM-DD.log`. It opens that file in read-only mode, seeks to its saved byte offset, and only processes lines that end with a newline. If the writer is still appending a partial line, that line is ignored until the next poll, so the logger keeps uninterrupted write access.
 
 Each successful batch is written to Postgres, and the parser stores its read offset in a local JSON state file on the MacMini. That keeps the database schema aligned with `openclaw_logs_schema.sql` while still letting the parser resume after restarts.
 
@@ -36,25 +36,34 @@ pip install -r requirements.txt
 Apply the schema:
 
 ```bash
-psql "$OPENCLAW_POSTGRES_DSN" -f openclaw_logs_schema.sql
+psql -h 127.0.0.1 -p 5432 -U "$OPENCLAW_POSTGRES_USER" -d "$OPENCLAW_POSTGRES_DATABASE" -f openclaw_logs_schema.sql
 ```
 
 ## Configuration
 
 Environment variables:
 
-- `OPENCLAW_POSTGRES_DSN`: required unless using `--dry-run`
-- `OPENCLAW_LOG_DIRECTORY`: directory holding daily logs
-- `OPENCLAW_LOG_FILE`: exact file to tail instead of auto-discovery
-- `OPENCLAW_STATE_FILE`: local JSON checkpoint file, default `.openclaw_log_parser_state.json`
-- `OPENCLAW_LOG_GLOB`: glob for selecting the active log file, default `openclaw-*.log`
+- `OPENCLAW_POSTGRES_DATABASE`: local database name, default `postgres`
+- `OPENCLAW_POSTGRES_USER`: optional local Postgres username
+- `OPENCLAW_POSTGRES_PASSWORD`: optional local Postgres password
+- `OPENCLAW_STATE_FILE`: local JSON checkpoint file, default `/tmp/openclaw/openclaw_log_parser_state.json`
 - `OPENCLAW_START_POSITION`: `end` or `beginning`; default `end`
 - `OPENCLAW_POLL_INTERVAL_SECONDS`: default `5`
 - `OPENCLAW_BATCH_SIZE`: default `250`
 - `OPENCLAW_CONSUMER_NAME`: checkpoint key, default `openclaw-log-parser`
-- `OPENCLAW_HEALTH_HOST`: default `127.0.0.1` when a port is enabled
 - `OPENCLAW_HEALTH_PORT`: optional health endpoint port
 - `OPENCLAW_LOG_LEVEL`: default `INFO`
+
+Fixed assumptions in code:
+
+- Postgres host is always `127.0.0.1`
+- Postgres port is always `5432`
+- Logs live under `/tmp/openclaw`
+- The active file name is always `openclaw-YYYY-MM-DD.log`
+
+Optional local override:
+
+- `OPENCLAW_LOG_DIRECTORY` can still be set for testing, but the intended server location is `/tmp/openclaw`
 
 ## Run
 
@@ -73,7 +82,7 @@ python3 openclaw_log_parser.py --once
 Parser validation without touching Postgres:
 
 ```bash
-python3 openclaw_log_parser.py --dry-run --once --start-position beginning --log-file ./openclaw-2026-03-28.log
+OPENCLAW_LOG_DIRECTORY=/path/to/test/logs python3 openclaw_log_parser.py --dry-run --once --start-position beginning
 ```
 
 Basic background run without `launchd`:
@@ -86,7 +95,7 @@ nohup python3 /opt/openclaw-log-parser/openclaw_log_parser.py >/tmp/openclaw-log
 
 1. Copy this project to the MacMini, for example `/opt/openclaw-log-parser`.
 2. Create a virtual environment there and install the requirements.
-3. Edit `deploy/com.openclaw.log-parser.plist` so `WorkingDirectory`, DSN, and log paths match the server.
+3. Edit `deploy/com.openclaw.log-parser.plist` so `WorkingDirectory`, database credentials, and optional health port match the server.
 4. Copy the plist to either:
    - `~/Library/LaunchAgents/` for a user-scoped service
    - `/Library/LaunchDaemons/` for a system service
@@ -103,4 +112,5 @@ If you enabled `OPENCLAW_HEALTH_PORT`, the process will expose a simple JSON sta
 - The ingestor skips malformed JSON lines and keeps advancing so one bad line does not stall the whole file.
 - `line_number` is tracked per source file from the newline count.
 - The parser keeps restart state in a local JSON file instead of creating extra Postgres tables.
+- The parser follows the server's current date when choosing which daily log file to read.
 - On a brand-new file with no checkpoint, `OPENCLAW_START_POSITION=end` means the service starts from the current tail and only captures new appends. Use `beginning` if you want backfill behavior instead.

@@ -4,13 +4,18 @@ from dataclasses import dataclass
 from pathlib import Path
 import os
 
+DEFAULT_LOG_DIRECTORY = Path("/tmp/openclaw")
+DEFAULT_STATE_FILE = Path("/tmp/openclaw/openclaw_log_parser_state.json")
+DEFAULT_POSTGRES_HOST = "127.0.0.1"
+DEFAULT_POSTGRES_PORT = 5432
+
 
 @dataclass(frozen=True)
 class IngestorConfig:
-    postgres_dsn: str | None
+    postgres_database: str
+    postgres_user: str | None
+    postgres_password: str | None
     log_directory: Path
-    log_glob: str | None
-    log_file: Path | None
     state_file: Path
     poll_interval_seconds: float
     batch_size: int
@@ -26,19 +31,14 @@ class IngestorConfig:
         health_port = int(health_port_raw) if health_port_raw else None
         health_host = os.getenv("OPENCLAW_HEALTH_HOST", "127.0.0.1") if health_port else None
 
-        log_file_raw = os.getenv("OPENCLAW_LOG_FILE")
-        log_file = Path(log_file_raw).expanduser() if log_file_raw else None
-
         state_file_raw = os.getenv("OPENCLAW_STATE_FILE")
-        state_file = Path(state_file_raw).expanduser() if state_file_raw else Path(".openclaw_log_parser_state.json")
+        state_file = Path(state_file_raw).expanduser() if state_file_raw else DEFAULT_STATE_FILE
 
         log_directory_raw = os.getenv("OPENCLAW_LOG_DIRECTORY")
         if log_directory_raw:
             log_directory = Path(log_directory_raw).expanduser()
-        elif log_file is not None:
-            log_directory = log_file.parent
         else:
-            log_directory = Path(".")
+            log_directory = DEFAULT_LOG_DIRECTORY
 
         start_position = os.getenv("OPENCLAW_START_POSITION", "end").lower()
         if start_position not in {"beginning", "end"}:
@@ -53,10 +53,10 @@ class IngestorConfig:
             raise ValueError("OPENCLAW_POLL_INTERVAL_SECONDS must be greater than zero.")
 
         return cls(
-            postgres_dsn=os.getenv("OPENCLAW_POSTGRES_DSN"),
+            postgres_database=os.getenv("OPENCLAW_POSTGRES_DATABASE", "postgres"),
+            postgres_user=os.getenv("OPENCLAW_POSTGRES_USER"),
+            postgres_password=os.getenv("OPENCLAW_POSTGRES_PASSWORD"),
             log_directory=log_directory,
-            log_glob=os.getenv("OPENCLAW_LOG_GLOB"),
-            log_file=log_file,
             state_file=state_file,
             poll_interval_seconds=poll_interval_seconds,
             batch_size=batch_size,

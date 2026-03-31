@@ -24,11 +24,14 @@ def main(argv: list[str] | None = None) -> int:
     if args.dry_run:
         sink = DryRunSink()
     else:
-        if not config.postgres_dsn:
-            parser.error("Provide OPENCLAW_POSTGRES_DSN or pass --dsn when not using --dry-run.")
         from .postgres import PostgresSink
 
-        sink = PostgresSink(config.postgres_dsn, config.state_file)
+        sink = PostgresSink(
+            database=config.postgres_database,
+            state_file=config.state_file,
+            user=config.postgres_user,
+            password=config.postgres_password,
+        )
 
     service = IngestorService(config=config, sink=sink, dry_run=args.dry_run)
 
@@ -48,11 +51,10 @@ def _build_argument_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Poll OpenClaw JSON logs and insert appended records into Postgres.",
     )
-    parser.add_argument("--dsn", help="Postgres DSN. Overrides OPENCLAW_POSTGRES_DSN.")
-    parser.add_argument("--log-directory", type=Path, help="Directory containing daily OpenClaw log files.")
-    parser.add_argument("--log-file", type=Path, help="Exact log file to tail instead of auto-discovering the latest.")
+    parser.add_argument("--database", help="Postgres database name on localhost:5432. Default: postgres")
+    parser.add_argument("--user", help="Optional Postgres username for localhost auth.")
+    parser.add_argument("--password", help="Optional Postgres password for localhost auth.")
     parser.add_argument("--state-file", type=Path, help="Local JSON checkpoint file used to resume after restarts.")
-    parser.add_argument("--log-glob", help="Glob used to locate the active log file. Default: openclaw-*.log")
     parser.add_argument(
         "--start-position",
         choices=("beginning", "end"),
@@ -71,10 +73,10 @@ def _build_argument_parser() -> argparse.ArgumentParser:
 
 def _apply_cli_overrides(config: IngestorConfig, args: argparse.Namespace) -> IngestorConfig:
     return IngestorConfig(
-        postgres_dsn=args.dsn or config.postgres_dsn,
-        log_directory=(args.log_directory or config.log_directory).expanduser(),
-        log_glob=args.log_glob if args.log_glob is not None else config.log_glob,
-        log_file=(args.log_file.expanduser() if args.log_file else config.log_file),
+        postgres_database=args.database or config.postgres_database,
+        postgres_user=args.user if args.user is not None else config.postgres_user,
+        postgres_password=args.password if args.password is not None else config.postgres_password,
+        log_directory=config.log_directory,
         state_file=(args.state_file.expanduser() if args.state_file else config.state_file),
         poll_interval_seconds=args.poll_interval_seconds or config.poll_interval_seconds,
         batch_size=args.batch_size or config.batch_size,

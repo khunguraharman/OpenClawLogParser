@@ -29,14 +29,14 @@
 
     <key>EnvironmentVariables</key>
     <dict>
-      <key>OPENCLAW_POSTGRES_DSN</key>
-      <string>postgresql://user:password@127.0.0.1:5432/openclaw</string>
-      <key>OPENCLAW_LOG_DIRECTORY</key>
-      <string>/var/log/openclaw</string>
+      <key>OPENCLAW_POSTGRES_DATABASE</key>
+      <string>openclaw</string>
+      <key>OPENCLAW_POSTGRES_USER</key>
+      <string>postgres</string>
+      <key>OPENCLAW_POSTGRES_PASSWORD</key>
+      <string>change-me</string>
       <key>OPENCLAW_STATE_FILE</key>
-      <string>/opt/openclaw-log-parser/.openclaw_log_parser_state.json</string>
-      <key>OPENCLAW_LOG_GLOB</key>
-      <string>openclaw-*.log</string>
+      <string>/tmp/openclaw/openclaw_log_parser_state.json</string>
       <key>OPENCLAW_START_POSITION</key>
       <string>end</string>
       <key>OPENCLAW_POLL_INTERVAL_SECONDS</key>

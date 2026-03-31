@@ -6,12 +6,19 @@ import os
 from pathlib import Path
 from typing import Any
 
+from .config import DEFAULT_POSTGRES_HOST, DEFAULT_POSTGRES_PORT
 from .parser import LogMetadataPayload, ParsedLogRecord
 from .tailer import Checkpoint
 
 
 class PostgresSink:
-    def __init__(self, dsn: str, state_file: Path) -> None:
+    def __init__(
+        self,
+        database: str,
+        state_file: Path,
+        user: str | None = None,
+        password: str | None = None,
+    ) -> None:
         try:
             import psycopg  # type: ignore[import-not-found]
             from psycopg.types.json import Jsonb  # type: ignore[import-not-found]
@@ -22,7 +29,9 @@ class PostgresSink:
 
         self._psycopg = psycopg
         self._Jsonb = Jsonb
-        self._dsn = dsn
+        self._database = database
+        self._user = user
+        self._password = password
         self._state_file = state_file
         self._connection = None
         self._metadata_cache: dict[tuple[Any, ...], int] = {}
@@ -213,7 +222,16 @@ class PostgresSink:
 
     def _ensure_connection(self):
         if self._connection is None or self._connection.closed:
-            self._connection = self._psycopg.connect(self._dsn)
+            connect_kwargs: dict[str, object] = {
+                "host": DEFAULT_POSTGRES_HOST,
+                "port": DEFAULT_POSTGRES_PORT,
+                "dbname": self._database,
+            }
+            if self._user:
+                connect_kwargs["user"] = self._user
+            if self._password:
+                connect_kwargs["password"] = self._password
+            self._connection = self._psycopg.connect(**connect_kwargs)
         return self._connection
 
     def _load_state(self) -> None:

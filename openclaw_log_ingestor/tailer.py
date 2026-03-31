@@ -1,9 +1,9 @@
 from __future__ import annotations
 
+from datetime import date
 from dataclasses import dataclass
 from pathlib import Path
-import glob
-import os
+from typing import Callable
 
 
 @dataclass(frozen=True)
@@ -28,31 +28,17 @@ class TailBatch:
     checkpoint: Checkpoint
 
 
-class LogFileLocator:
-    def __init__(self, directory: Path, exact_file: Path | None = None, glob_pattern: str | None = None) -> None:
+class DailyLogFileLocator:
+    def __init__(self, directory: Path, today_provider: Callable[[], date] | None = None) -> None:
         self._directory = directory
-        self._exact_file = exact_file
-        self._glob_pattern = glob_pattern
+        self._today_provider = today_provider or date.today
 
     def find_active_file(self) -> Path | None:
-        if self._exact_file is not None:
-            return self._exact_file if self._exact_file.exists() else None
-
-        matches = self._matching_files()
-        if not matches:
+        active_file = self._directory / f"openclaw-{self._today_provider().isoformat()}.log"
+        if not active_file.exists():
             return None
 
-        return max(matches, key=lambda path: path.name)
-
-    def _matching_files(self) -> list[Path]:
-        pattern = self._glob_pattern or "openclaw-*.log"
-        if os.path.isabs(pattern):
-            return [Path(match) for match in glob.glob(pattern) if Path(match).is_file()]
-
-        if not self._directory.exists():
-            return []
-
-        return [path for path in self._directory.glob(pattern) if path.is_file()]
+        return active_file
 
 
 class FileTailer:
