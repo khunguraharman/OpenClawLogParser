@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from datetime import date
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
@@ -28,17 +27,24 @@ class TailBatch:
     checkpoint: Checkpoint
 
 
-class DailyLogFileLocator:
-    def __init__(self, directory: Path, today_provider: Callable[[], date] | None = None) -> None:
+class NewestLogFileLocator:
+    def __init__(
+        self,
+        directory: Path,
+        timestamp_provider: Callable[[Path], float] | None = None,
+    ) -> None:
         self._directory = directory
-        self._today_provider = today_provider or date.today
+        self._timestamp_provider = timestamp_provider or _file_created_timestamp
 
     def find_active_file(self) -> Path | None:
-        active_file = self._directory / f"openclaw-{self._today_provider().isoformat()}.log"
-        if not active_file.exists():
+        if not self._directory.exists():
             return None
 
-        return active_file
+        matches = [path for path in self._directory.glob("openclaw-*.log") if path.is_file()]
+        if not matches:
+            return None
+
+        return max(matches, key=self._timestamp_provider)
 
 
 class FileTailer:
@@ -147,3 +153,8 @@ def _optional_int(value: object) -> int | None:
     if value is None:
         return None
     return int(value)
+
+
+def _file_created_timestamp(path: Path) -> float:
+    stat_result = path.stat()
+    return float(getattr(stat_result, "st_birthtime", stat_result.st_mtime))

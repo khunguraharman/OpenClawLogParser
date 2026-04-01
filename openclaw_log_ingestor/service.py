@@ -11,7 +11,7 @@ from typing import Protocol, Sequence
 from .config import IngestorConfig
 from .health import HealthServer, HealthSnapshot
 from .parser import ParsedLogRecord, parse_log_line
-from .tailer import Checkpoint, DailyLogFileLocator, FileTailer
+from .tailer import Checkpoint, FileTailer, NewestLogFileLocator
 
 
 LOGGER = logging.getLogger(__name__)
@@ -52,7 +52,7 @@ class IngestorService:
         self._config = config
         self._sink = sink
         self._dry_run = dry_run
-        self._locator = DailyLogFileLocator(directory=config.log_directory)
+        self._locator = NewestLogFileLocator(directory=config.log_directory)
         self._tailer = FileTailer(config.consumer_name, config.start_position)
         self._health_lock = threading.Lock()
         self._health_snapshot = HealthSnapshot(consumer_name=config.consumer_name, dry_run=dry_run)
@@ -94,7 +94,7 @@ class IngestorService:
 
         active_file = self._locator.find_active_file()
         if active_file is None:
-            LOGGER.info("Today's log file is not present yet.")
+            LOGGER.info("No matching OpenClaw log file found yet in %s.", self._config.log_directory)
             self._set_health(active_log_path=None)
             return 0
 

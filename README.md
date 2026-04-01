@@ -12,7 +12,7 @@ It is designed for the MacMini-style deployment you described:
 
 ## How it works
 
-The parser looks for exactly one file each day: `/tmp/openclaw/openclaw-YYYY-MM-DD.log`. It opens that file in read-only mode, seeks to its saved byte offset, and only processes lines that end with a newline. If the writer is still appending a partial line, that line is ignored until the next poll, so the logger keeps uninterrupted write access.
+The parser scans `/tmp/openclaw` for files named `openclaw-*.log`, picks the one created most recently, opens it in read-only mode, seeks to its saved byte offset, and only processes lines that end with a newline. If the writer is still appending a partial line, that line is ignored until the next poll, so the logger keeps uninterrupted write access.
 
 Each successful batch is written to Postgres, and the parser stores its read offset in a local JSON state file on the MacMini. That keeps the database schema aligned with `openclaw_logs_schema.sql` while still letting the parser resume after restarts.
 
@@ -59,7 +59,7 @@ Fixed assumptions in code:
 - Postgres host is always `127.0.0.1`
 - Postgres port is always `5432`
 - Logs live under `/tmp/openclaw`
-- The active file name is always `openclaw-YYYY-MM-DD.log`
+- The parser chooses the newest `openclaw-*.log` file in that folder
 
 Optional local override:
 
@@ -112,5 +112,5 @@ If you enabled `OPENCLAW_HEALTH_PORT`, the process will expose a simple JSON sta
 - The ingestor skips malformed JSON lines and keeps advancing so one bad line does not stall the whole file.
 - `line_number` is tracked per source file from the newline count.
 - The parser keeps restart state in a local JSON file instead of creating extra Postgres tables.
-- The parser follows the server's current date when choosing which daily log file to read.
+- The parser ignores the date embedded in the filename and instead follows the newest log file in `/tmp/openclaw`.
 - On a brand-new file with no checkpoint, `OPENCLAW_START_POSITION=end` means the service starts from the current tail and only captures new appends. Use `beginning` if you want backfill behavior instead.

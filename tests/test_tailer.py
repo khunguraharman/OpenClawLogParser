@@ -1,22 +1,27 @@
 from __future__ import annotations
 
-from datetime import date
 from pathlib import Path
 import tempfile
 import unittest
 
-from openclaw_log_ingestor.tailer import Checkpoint, DailyLogFileLocator, FileTailer
+from openclaw_log_ingestor.tailer import Checkpoint, FileTailer, NewestLogFileLocator
 
 
 class TailerTests(unittest.TestCase):
-    def test_locator_finds_today_log(self) -> None:
+    def test_locator_finds_newest_log_file(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
-            (root / "openclaw-2026-03-30.log").write_text("b\n", encoding="utf-8")
+            older_log = root / "openclaw-2026-03-28.log"
+            newer_log = root / "openclaw-2026-03-30.log"
+            older_log.write_text("a\n", encoding="utf-8")
+            newer_log.write_text("b\n", encoding="utf-8")
 
-            locator = DailyLogFileLocator(directory=root, today_provider=lambda: date(2026, 3, 30))
+            locator = NewestLogFileLocator(
+                directory=root,
+                timestamp_provider=lambda path: 10.0 if path == newer_log else 1.0,
+            )
 
-            self.assertEqual(locator.find_active_file(), root / "openclaw-2026-03-30.log")
+            self.assertEqual(locator.find_active_file(), newer_log)
 
     def test_tailer_waits_for_complete_line(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
