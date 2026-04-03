@@ -50,6 +50,7 @@ class PostgresSink:
     def persist_batch(self, checkpoint: Checkpoint, events: Sequence[ParsedLogRecord]) -> int:
         connection = self._ensure_connection()
         inserted_count = 0
+        run_ids = {event.run_id for event in events if event.run_id is not None}
         with connection.transaction():
             with connection.cursor() as cursor:
                 for event in events:
@@ -63,6 +64,7 @@ class PostgresSink:
                         """
                         insert into openclaw_logs.log_entries (
                             log_metadata_id,
+                            run_id,
                             line_number,
                             logged_at,
                             meta_date,
@@ -76,11 +78,12 @@ class PostgresSink:
                             field2_json,
                             raw_record
                         )
-                        select %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+                        select %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
                         where not exists (
                             select 1
                             from openclaw_logs.log_entries
                             where log_metadata_id = %s
+                              and run_id is not distinct from %s
                               and line_number is not distinct from %s
                               and logged_at = %s
                               and meta_date is not distinct from %s
@@ -97,6 +100,7 @@ class PostgresSink:
                         """,
                         (
                             metadata_id,
+                            event.run_id,
                             event.line_number,
                             event.logged_at,
                             event.meta_date,
@@ -110,6 +114,7 @@ class PostgresSink:
                             field2_json,
                             raw_record,
                             metadata_id,
+                            event.run_id,
                             event.line_number,
                             event.logged_at,
                             event.meta_date,
@@ -125,6 +130,11 @@ class PostgresSink:
                         ),
                     )
                     inserted_count += cursor.rowcount
+
+                for run_id in run_ids:
+                    self._upsert_run_observability(cursor, run_id)
+                    self._upsert_run_evaluation(cursor, run_id)
+                    self._upsert_run_optimization(cursor, run_id)
 
         self._checkpoints[(checkpoint.consumer_name, checkpoint.log_path)] = checkpoint
         self._save_state()
@@ -219,6 +229,128 @@ class PostgresSink:
         if value is None:
             return None
         return self._Jsonb(value)
+
+    def _upsert_run_observability(self, cursor, run_id) -> None:
+        cursor.execute(
+            """
+            with run_bounds as (
+                select
+                    run_id,
+                    min(logged_at) as trace_started_at,
+                    max(logged_at) as trace_finished_at
+                from openclaw_logs.log_entries
+                where run_id = %s
+                group by run_id
+            )
+            insert into openclaw_logs.agent_operation_observability (
+                run_id,
+                trace_started_at,
+                trace_finished_at,
+                end_to_end_trace_ms,
+                agent_to_agent_handoff_latency_ms,
+                cost_per_request_usd,
+                notes
+            )
+            select
+                run_id,
+                trace_started_at,
+                trace_finished_at,
+                round((extract(epoch from (trace_finished_at - trace_started_at)) * 1000)::numeric, 3),
+                null,
+                null,
+                'Derived from earliest and latest log_entries.logged_at for the run.'
+            from run_bounds
+            on conflict (run_id) do update set
+                trace_started_at = excluded.trace_started_at,
+                trace_finished_at = excluded.trace_finished_at,
+                end_to_end_trace_ms = excluded.end_to_end_trace_ms,
+                agent_to_agent_handoff_latency_ms = excluded.agent_to_agent_handoff_latency_ms,
+                cost_per_request_usd = excluded.cost_per_request_usd,
+                notes = excluded.notes,
+                measured_at = now()
+            """,
+            (run_id,),
+        )
+
+    def _upsert_run_evaluation(self, cursor, run_id) -> None:
+        cursor.execute(
+            """
+            with run_summary as (
+                select
+                    run_id,
+                    bool_or(
+                        field1_json->>'event' = 'embedded_run_agent_end'
+                        and coalesce((field1_json->>'isError')::boolean, false) = false
+                    ) as has_successful_end,
+                    bool_or(
+                        field1_json->>'event' = 'embedded_run_agent_end'
+                        and coalesce((field1_json->>'isError')::boolean, false) = true
+                    ) as has_error_end
+                from openclaw_logs.log_entries
+                where run_id = %s
+                group by run_id
+            )
+            insert into openclaw_logs.agent_operation_evaluation (
+                run_id,
+                task_completion_percentage,
+                guardrail_violation_rate,
+                factual_accuracy_rate,
+                notes
+            )
+            select
+                run_id,
+                case
+                    when has_successful_end then 100.00
+                    when has_error_end then 0.00
+                    else null
+                end,
+                0,
+                0,
+                case
+                    when has_successful_end then 'Derived from embedded_run_agent_end with isError=false.'
+                    when has_error_end then 'Derived from embedded_run_agent_end with isError=true.'
+                    else 'No terminal embedded_run_agent_end signal observed yet.'
+                end
+            from run_summary
+            on conflict (run_id) do update set
+                task_completion_percentage = excluded.task_completion_percentage,
+                guardrail_violation_rate = excluded.guardrail_violation_rate,
+                factual_accuracy_rate = excluded.factual_accuracy_rate,
+                notes = excluded.notes,
+                measured_at = now()
+            """,
+            (run_id,),
+        )
+
+    def _upsert_run_optimization(self, cursor, run_id) -> None:
+        cursor.execute(
+            """
+            insert into openclaw_logs.agent_operation_optimization (
+                run_id,
+                prompt_token_efficiency,
+                retrieval_precision_at_k,
+                retrieval_k,
+                handoff_success_rate,
+                notes
+            )
+            values (
+                %s,
+                null,
+                null,
+                null,
+                100,
+                'Current log format does not expose prompt-token, retrieval, or multi-agent handoff metrics.'
+            )
+            on conflict (run_id) do update set
+                prompt_token_efficiency = excluded.prompt_token_efficiency,
+                retrieval_precision_at_k = excluded.retrieval_precision_at_k,
+                retrieval_k = excluded.retrieval_k,
+                handoff_success_rate = excluded.handoff_success_rate,
+                notes = excluded.notes,
+                measured_at = now()
+            """,
+            (run_id,),
+        )
 
     def _ensure_connection(self):
         if self._connection is None or self._connection.closed:

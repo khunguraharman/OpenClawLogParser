@@ -1,6 +1,6 @@
 # OpenClaw Log Parser
 
-This background script watches the active OpenClaw daily log file, reads only completed appended lines, parses each JSON log event, and writes it into the `openclaw_logs` Postgres tables defined by `openclaw_logs_schema.sql`.
+This background script watches the active OpenClaw daily log file, reads only completed appended lines, parses each JSON log event, and writes it into the `openclaw_logs` Postgres tables defined by `openclaw_logs_schema.sql`, including run-level `run_id` rollups when the logs expose them.
 
 It is designed for the MacMini-style deployment you described:
 

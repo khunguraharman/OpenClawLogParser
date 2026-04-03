@@ -23,6 +23,14 @@ STRUCTURED_LINE = (
     '"time":"2026-03-28T16:46:57.621-07:00"}'
 )
 
+RUN_LINE = (
+    '{"0":"{\\"subsystem\\":\\"agent/embedded\\"}",'
+    '"1":{"event":"embedded_run_agent_end","runId":"31d7fc6a-aa5f-4664-971c-68b925be4a8a","isError":true},'
+    '"2":"embedded run agent end",'
+    '"_meta":{"name":"{\\"subsystem\\":\\"agent/embedded\\"}","parentNames":["openclaw"],"date":"2026-03-28T23:48:57.979Z"},'
+    '"time":"2026-03-28T16:48:57.979-07:00"}'
+)
+
 
 class ParserTests(unittest.TestCase):
     def test_parses_string_context_and_metadata(self) -> None:
@@ -48,6 +56,14 @@ class ParserTests(unittest.TestCase):
         self.assertEqual(parsed.field1_json, {"channel": "C0AN9S5E5A8", "reason": "no-mention"})
         self.assertIsNone(parsed.field1_text)
         self.assertEqual(parsed.field2_text, "skipping channel message")
+
+    def test_extracts_run_id_from_field1_json(self) -> None:
+        parsed = parse_log_line(RUN_LINE, line_number=12)
+
+        self.assertIsNotNone(parsed)
+        assert parsed is not None
+        self.assertEqual(str(parsed.run_id), "31d7fc6a-aa5f-4664-971c-68b925be4a8a")
+        self.assertEqual(parsed.field2_text, "embedded run agent end")
 
     def test_returns_none_for_blank_line(self) -> None:
         self.assertIsNone(parse_log_line("   ", line_number=1))

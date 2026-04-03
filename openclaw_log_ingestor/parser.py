@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from datetime import datetime
 import json
 from typing import Any
+from uuid import UUID
 
 
 JsonValue = dict[str, Any] | list[Any] | str | int | float | bool | None
@@ -42,6 +43,7 @@ class LogMetadataPayload:
 @dataclass(frozen=True)
 class ParsedLogRecord:
     line_number: int
+    run_id: UUID | None
     logged_at: datetime
     meta_date: datetime | None
     log_level_id: int | None
@@ -83,6 +85,7 @@ def parse_log_line(raw_line: str, line_number: int) -> ParsedLogRecord | None:
 
     return ParsedLogRecord(
         line_number=line_number,
+        run_id=_extract_run_id(payload.get("1")),
         logged_at=logged_at,
         meta_date=meta_date,
         log_level_id=_parse_int(meta.get("logLevelId")),
@@ -163,6 +166,20 @@ def _field_json(value: Any) -> JsonValue:
     if isinstance(value, str):
         return None
     return value
+
+
+def _extract_run_id(value: Any) -> UUID | None:
+    if not isinstance(value, dict):
+        return None
+
+    run_id = value.get("runId")
+    if not isinstance(run_id, str) or not run_id:
+        return None
+
+    try:
+        return UUID(run_id)
+    except ValueError:
+        return None
 
 
 def _as_optional_text(value: Any) -> str | None:
