@@ -26,9 +26,10 @@ Each successful batch is written to Postgres, and the parser stores its read off
 ## Install
 
 There is no package install step for the parser itself. It runs directly as a script from this folder.
+Use Python 3.12 or newer.
 
 ```bash
-python3 -m venv .venv
+python3.12 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 ```
